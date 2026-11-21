@@ -15,7 +15,7 @@ device = "auto"
 language = ""
 
 [ocr]
-engine = "paddle"
+engine = "easy"
 language = "en"
 min_confidence = 0.55
 dedup_similarity = 0.88
