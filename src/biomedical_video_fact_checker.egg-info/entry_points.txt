@@ -1,0 +1,7 @@
+[console_scripts]
+biofc-build-index = biomed_video_fc.retrieval.offline_index:main
+biofc-evaluate-challenge = biomed_video_fc.training.challenge_evaluation:main
+biofc-prepare-datasets = biomed_video_fc.training.prepare_datasets:main
+biofc-prepare-pubmed = biomed_video_fc.retrieval.pubmed_xml:main
+biofc-train = biomed_video_fc.training.healthfc:main
+biofc-train-multisource = biomed_video_fc.training.multisource:main

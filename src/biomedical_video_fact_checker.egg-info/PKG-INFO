@@ -1,0 +1,300 @@
+Metadata-Version: 2.4
+Name: biomedical-video-fact-checker
+Version: 0.5.0.dev0
+Summary: Evidence-grounded biomedical claim verification for video speech and on-screen text
+Author: Final Year Project
+Requires-Python: <3.13,>=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: opencv-python-headless<5,>=4.10
+Requires-Dist: imageio-ffmpeg<1,>=0.5
+Requires-Dist: numpy<3,>=1.26
+Requires-Dist: pydantic<3,>=2.8
+Requires-Dist: streamlit<2,>=1.37
+Provides-Extra: speech
+Requires-Dist: openai-whisper>=20240930; extra == "speech"
+Provides-Extra: ocr-paddle
+Requires-Dist: paddleocr<4,>=2.8; extra == "ocr-paddle"
+Requires-Dist: paddlepaddle<4,>=2.6; extra == "ocr-paddle"
+Provides-Extra: ocr-easy
+Requires-Dist: easyocr<2,>=1.7; extra == "ocr-easy"
+Provides-Extra: local-ml
+Requires-Dist: torch<3,>=2.3; extra == "local-ml"
+Requires-Dist: transformers<6,>=4.44; extra == "local-ml"
+Requires-Dist: sentence-transformers<6,>=3; extra == "local-ml"
+Requires-Dist: scikit-learn<2,>=1.5; extra == "local-ml"
+Provides-Extra: offline-index
+Requires-Dist: sentence-transformers<6,>=3; extra == "offline-index"
+Requires-Dist: faiss-cpu<2,>=1.8; extra == "offline-index"
+Provides-Extra: dev
+Requires-Dist: pytest<10,>=8; extra == "dev"
+Requires-Dist: pytest-cov<8,>=5; extra == "dev"
+Requires-Dist: ruff<1,>=0.6; extra == "dev"
+Requires-Dist: mypy<2,>=1.11; extra == "dev"
+Provides-Extra: all
+Requires-Dist: openai-whisper>=20240930; extra == "all"
+Requires-Dist: paddleocr<4,>=2.8; extra == "all"
+Requires-Dist: paddlepaddle<4,>=2.6; extra == "all"
+Requires-Dist: torch<3,>=2.3; extra == "all"
+Requires-Dist: transformers<6,>=4.44; extra == "all"
+Requires-Dist: sentence-transformers<6,>=3; extra == "all"
+Requires-Dist: scikit-learn<2,>=1.5; extra == "all"
+
+# Biomedical Video Truth Verification using Scientific Evidence
+
+This project verifies biomedical claims found in short MP4 videos. It extracts speech and visible
+text, turns compound statements into atomic claims, retrieves relevant PubMed abstracts, and
+predicts `TRUE`, `FALSE`, or `NOT ENOUGH INFORMATION` (NEI).
+
+The project uses open-source models only. Video processing, claim extraction, reranking, and verdict
+prediction run locally. Claim searches and returned abstracts are sent through the official NCBI
+PubMed API.
+
+> Research prototype only. A verdict is not medical advice and must not be used for diagnosis or
+> treatment.
+
+## Architecture
+
+```text
+MP4 video
+  +-- FFmpeg -> 16 kHz mono WAV -> local Whisper -> timestamped speech
+  +-- OpenCV -> sampled frames -> local PaddleOCR/EasyOCR -> timestamped text
+                                  |
+                    time-align and remove duplicate OCR
+                                  |
+                  local DeBERTa biomedical claim detector
+                                  |
+             decompose compound statements into atomic claims
+                                  |
+        expanded multi-query PubMed search (up to 50 candidates)
+                                  |
+                 local SentenceTransformer reranking
+                                  |
+          protected biomedical-entity consistency gate
+                                  |
+         BiomedBERT stance for each selected evidence passage
+                                  |
+       qualifier / quantity / negation completeness checks
+                                  |
+        aggregate SUPPORTS / CONTRADICTS / NEUTRAL evidence
+                                  |
+              TRUE / FALSE / NEI + confidence + audit trail
+                                  |
+                         Streamlit dashboard
+```
+
+The atomic-claim stage matters for statements such as “bleeding gums, dry skin, and easy bruising
+are signs of vitamin C deficiency, not more colds.” Each assertion is retrieved and verified
+separately, so one partly relevant abstract cannot decide the entire sentence.
+
+## Datasets now supported
+
+Place these files in `data/`:
+
+| Dataset | Expected file | How it is used |
+|---|---|---|
+| HealthFC | `HealthFC.csv` | Three-way claim/evidence verification (`TRUE`, `FALSE`, `NEI`) |
+| BioASQ 7B training | `BioASQ-training7b.zip` | Yes/no biomedical questions with snippet evidence |
+| BioASQ 7B golden test | `Task7BGoldenEnriched.zip` | Held-out BioASQ evaluation records |
+| SciFact | `data.tar.gz` | Scientific claim support, contradiction, and conservative NEI examples |
+
+`bigbio.py`, `bioasq.py`, `scifact.py`, and `scinfo.json` are loader/metadata files; they do not
+replace the archives above. The current project has validated and prepared all three datasets.
+
+The preparation step deliberately:
+
+- excludes HealthFC explanations to prevent verdict leakage;
+- includes only BioASQ yes/no records;
+- merges duplicate BioASQ questions and excludes a conflicting duplicate-label pair;
+- excludes the unlabeled SciFact public test split;
+- removes exact SciFact claims repeated in train and development from train;
+- preserves dataset provenance, source IDs, official splits, and SHA-256 hashes; and
+- keeps examples from the same source group out of different experiment splits.
+
+Prepare normalized JSONL files:
+
+```powershell
+biofc-prepare-datasets --data-dir data --output artifacts/prepared_datasets
+```
+
+The supplied archives produce 3,371 normalized examples: 750 HealthFC, 874 BioASQ, and 1,747
+SciFact. These are preparation counts, not model-performance results.
+
+## Project structure
+
+```text
+src/biomed_video_fc/
+|-- domain/models.py                 # Typed audit/result models
+|-- media/processors.py              # FFmpeg and OpenCV
+|-- speech/whisper_transcriber.py    # Local speech recognition
+|-- ocr/readers.py                   # Local PaddleOCR/EasyOCR
+|-- text/merger.py                   # Time alignment and meaning-safe OCR merging
+|-- claims/extractor.py              # Local DeBERTa claim detector
+|-- claims/decomposer.py             # Compound-to-atomic claim decomposition
+|-- retrieval/entity_validation.py   # Wrong-micronutrient protection
+|-- retrieval/pubmed_api.py          # Multi-query PubMed retrieval and reranking
+|-- reasoning/constraints.py         # Qualifier, quantity, and negation checks
+|-- reasoning/local_classifier.py    # Per-evidence stance and verdict aggregation
+|-- training/datasets.py             # HealthFC, BioASQ, and SciFact loaders
+|-- training/prepare_datasets.py     # Reproducible JSONL preparation
+|-- training/augmentation.py         # Entity/negation/qualifier hard examples
+|-- training/healthfc.py             # HealthFC-only training option
+|-- training/multisource.py          # Multi-dataset BiomedBERT training
+|-- training/challenge_evaluation.py # Fixed precision diagnostic
+|-- evaluation.py                    # Label mapping and macro metrics
+|-- pipeline.py                      # Fault-tolerant orchestration
+|-- factory.py                       # Application component composition
++-- ui/streamlit_app.py              # Streamlit dashboard
+```
+
+## 1. Installation
+
+Use Python 3.11 or 3.12. On Windows, the recommended setup is:
+
+```powershell
+winget install -e --id Python.Python.3.11
+# Close and reopen PowerShell after installation.
+powershell -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1
+```
+
+The setup script detects a virtual environment whose base Python was removed. It preserves that
+folder as a timestamped `.venv-backup-*` directory before creating a clean environment.
+
+Manual setup:
+
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e ".[all,dev]"
+```
+
+The first installation and pretrained-model download require internet access. Runtime evidence
+retrieval also needs internet access to PubMed. Use the correct GPU builds of PyTorch and
+PaddlePaddle when a supported GPU is available.
+
+## 2. Train the verifier
+
+Recommended multi-dataset experiment:
+
+```powershell
+biofc-prepare-datasets --data-dir data --output artifacts/prepared_datasets
+biofc-train-multisource --prepared-dir artifacts/prepared_datasets --output artifacts/multisource_classifier --epochs 5 --batch-size 8 --hard-negative-ratio 0.25 --seed 42
+```
+
+For a GPU-guided workflow, open
+`notebooks/train_multisource_verifier_colab.ipynb` in Google Colab and run its cells in order.
+
+The default base model is:
+
+```text
+microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext
+```
+
+Training uses class-weighted loss, validation macro-F1 for early stopping, and source-grouped
+splits. It adds a capped set of training-only hard examples for wrong micronutrients, negation
+flips, and unsupported “first sign” wording. The BioASQ golden split and SciFact development split
+remain untouched for testing. Outputs include the best model and tokenizer, per-dataset metrics,
+split example IDs, augmentation counts, epoch history, environment details, and row-level test
+predictions under `artifacts/multisource_classifier/`.
+
+No new accuracy or F1 score is claimed until that training command completes. Dataset preparation
+alone is not model evaluation.
+
+To use the newly trained checkpoint, set `classifier.model_dir` in `config/default.toml` to
+`artifacts/multisource_classifier`, or set `BIOFC_CLASSIFIER_DIR` for the process. The original
+HealthFC-only command remains available as `biofc-train` for reproducibility.
+
+## 3. Configure PubMed
+
+Enter a contact email in the Streamlit sidebar, or set it before starting the app:
+
+```powershell
+$env:BIOFC_NCBI_EMAIL = "your-real-email@example.com"
+# Optional:
+$env:BIOFC_NCBI_API_KEY = "your-key"
+```
+
+For each atomic claim, retrieval creates biomedical synonym variants, collects up to 50 PubMed
+candidates across the queries, and reranks them locally. Keyword coverage is a permissive safety
+signal, not a rule requiring the abstract to repeat the claim's negation. This allows an abstract
+to contradict a claim instead of being incorrectly removed before verification. A separate entity
+gate requires explicit protected concepts such as Vitamin C/ascorbic acid/scurvy to occur in the
+candidate. A Vitamin A-only abstract is rejected even when its semantic similarity is high.
+
+## 4. Run the dashboard
+
+```powershell
+streamlit run app.py
+```
+
+The result shows transcripts, atomic claims, retrieved papers, the exact passages assessed by
+BiomedBERT, raw and constraint-adjusted evidence stance, matched biomedical entities, the
+aggregated verdict, confidence, review warnings, timings, PubMed links, and a downloadable JSON
+audit record. Related evidence remains visible when a missing qualifier changes its stance to
+`NEUTRAL` and its final verdict to NEI.
+
+## Tests
+
+The fast tests do not load large models:
+
+```powershell
+python -m unittest discover -s tests -v
+python -m compileall -q src tests app.py
+ruff check src tests app.py
+```
+
+The 32 tests cover dataset loading, label mappings, atomic decomposition,
+negation/dosage/time-safe text merging, synonym query expansion, PubMed parsing, protected entity
+matching, wrong-micronutrient rejection, qualifier-aware stance adjustment, hard-negative
+generation, per-paper stance aggregation, zero-confidence review behavior when evidence is
+missing, and pipeline orchestration. Regression tests confirm that the supplied Vitamin C
+pediatric abstract remains visible for bleeding gums but cannot establish the unsupported word
+“first.”
+
+After training, run the fixed diagnostic separately from the untouched test evaluation:
+
+```powershell
+biofc-evaluate-challenge --model-dir artifacts/multisource_classifier --challenge data/challenge_sets/vitamin_c_precision.jsonl --output artifacts/evaluation/vitamin_c_precision_report.json
+```
+
+This five-case challenge checks Vitamin C versus Vitamin A, negation, direct support, explicit
+contradiction, and unsupported temporal qualifiers. Its score is diagnostic and must not be
+reported as the main test result.
+
+## Evaluation to report
+
+- overall and per-dataset accuracy, macro precision/recall/F1, and confusion matrices;
+- per-class F1 and NEI prediction rate;
+- retrieval recall@3 and recall@50 on evidence-annotated claims;
+- evidence-stance accuracy before final aggregation;
+- confidence calibration and selective accuracy when review-required cases are deferred;
+- Whisper word error rate, OCR character error rate, and atomic-claim extraction precision/recall;
+- speech-only, OCR-only, and combined-input ablations; and
+- latency and memory use on the demonstration machine.
+
+Always keep the final test splits untouched until model and threshold choices are complete.
+
+## Important limitations
+
+- BioASQ yes/no answers are converted to truth labels, which is useful supervision but not
+  identical to natural-language claim verification.
+- SciFact is scientific-domain evidence; HealthFC is consumer health evidence; PubMed abstracts at
+  runtime introduce another domain shift that must be measured.
+- Automatically constructed SciFact NEI examples are conservative negatives, not human-authored
+  NEI annotations.
+- Rule-based atomic decomposition handles common lists and predicates but is not a full semantic
+  parser. The UI exposes parent/atomic claims so mistakes can be audited.
+- Protected entity matching currently covers common vitamins and minerals. Drug names and diseases
+  still rely on lexical/semantic retrieval and should later use a biomedical entity linker.
+- Claim-detail checks deliberately favor NEI when an abstract does not explicitly address words
+  such as “first,” “only,” or an exact dosage. This improves precision but can reduce recall.
+- Abstracts can omit methods and caveats. Partial, conflicting, failed, or absent evidence should
+  produce NEI and require review rather than a high-confidence answer.
+- A model confidence is not a clinical probability, and the system does not establish medical
+  causality.
+- PubMed search can miss evidence, and live results can change as PubMed is updated. Preserve
+  retrieval queries and PMIDs in exported audit records.
+
+The next milestone is to train the multi-dataset checkpoint in the supplied Colab notebook and
+report the untouched test results and the separate focused challenge report without combining them.

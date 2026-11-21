@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "biomedical-video-fact-checker"
+version = "0.5.1.dev0"
+description = "Evidence-grounded biomedical claim verification for video speech and on-screen text"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+authors = [{name = "Final Year Project"}]
+dependencies = [
+  "opencv-python-headless>=4.10,<5",
+  "imageio-ffmpeg>=0.5,<1",
+  "numpy>=1.26,<3",
+  "pydantic>=2.8,<3",
+  "streamlit>=1.37,<2",
+]
+
+[project.optional-dependencies]
+speech = ["openai-whisper>=20240930"]
+ocr-paddle = ["paddleocr>=2.8,<4", "paddlepaddle>=2.6,<4"]
+ocr-easy = ["easyocr>=1.7,<2"]
+local-ml = [
+  "torch>=2.3,<3",
+  "torchvision>=0.28,<0.30",
+  "transformers>=4.44,<6",
+  "sentence-transformers>=3,<6",
+  "scikit-learn>=1.5,<2",
+]
+offline-index = ["sentence-transformers>=3,<6", "faiss-cpu>=1.8,<2"]
+dev = ["pytest>=8,<10", "pytest-cov>=5,<8", "ruff>=0.6,<1", "mypy>=1.11,<2"]
+all = [
+  "openai-whisper>=20240930",
+  "paddleocr>=2.8,<4",
+  "paddlepaddle>=2.6,<4",
+  "torch>=2.3,<3",
+  "torchvision>=0.28,<0.30",
+  "transformers>=4.44,<6",
+  "sentence-transformers>=3,<6",
+  "scikit-learn>=1.5,<2",
+]
+
+[project.scripts]
+biofc-train = "biomed_video_fc.training.healthfc:main"
+biofc-prepare-pubmed = "biomed_video_fc.retrieval.pubmed_xml:main"
+biofc-build-index = "biomed_video_fc.retrieval.offline_index:main"
+biofc-prepare-datasets = "biomed_video_fc.training.prepare_datasets:main"
+biofc-train-multisource = "biomed_video_fc.training.multisource:main"
+biofc-evaluate-challenge = "biomed_video_fc.training.challenge_evaluation:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

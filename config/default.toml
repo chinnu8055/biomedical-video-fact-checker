@@ -1,0 +1,51 @@
+[app]
+name = "Biomedical Video Fact Checker"
+max_upload_mb = 500
+allowed_extensions = [".mp4"]
+
+[media]
+ffmpeg_binary = "ffmpeg"
+frame_interval_seconds = 1.0
+audio_sample_rate = 16000
+max_video_seconds = 1800
+
+[speech]
+model = "small"
+device = "auto"
+language = ""
+
+[ocr]
+engine = "paddle"
+language = "en"
+min_confidence = 0.55
+dedup_similarity = 0.88
+
+[claims]
+max_claims = 5
+max_atomic_claims = 12
+model = "MoritzLaurer/deberta-v3-large-zeroshot-v1.1-all-33"
+min_confidence = 0.55
+device = -1
+
+[retrieval]
+max_results = 3
+candidate_results = 50
+max_queries = 3
+email = ""
+api_key = ""
+tool = "biomedical-video-fact-checker"
+timeout_seconds = 20.0
+retries = 3
+semantic_rerank = true
+embedding_model = "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
+minimum_relevance = 0.30
+minimum_term_coverage = 0.20
+
+[classifier]
+model_dir = "artifacts/healthfc_classifier"
+base_model = "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext"
+max_length = 512
+
+[logging]
+level = "INFO"
+json = false

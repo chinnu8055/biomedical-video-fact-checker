@@ -1,0 +1,5 @@
+[server]
+# Transformers exposes many optional lazy modules. Disabling source watching prevents Streamlit
+# from importing unrelated vision modules (and emitting false torchvision warnings) during scans.
+fileWatcherType = "none"
+runOnSave = false
